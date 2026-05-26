@@ -4,6 +4,7 @@ import ImageUpload from './ImageUpload'
 import TypeSelector from './TypeSelector'
 import TextEditor from './TextEditor'
 import MentionInput from './MentionInput'
+import PostPreview from './PostPreview'
 
 const IG_GRADIENT = 'linear-gradient(45deg, #833AB4, #FD1D1D, #F77737)'
 
@@ -135,6 +136,11 @@ export default function EditPanel({ date, initialData, onSave, onClose }: Props)
 
         {/* フォーム */}
         <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* 投稿プレビュー（リアルタイム更新） */}
+          <section>
+            <PostPreview imageUrl={imageUrl} customText={customText} mentions={mentions} />
+          </section>
+
           {/* 画像アップロード */}
           <section>
             <label style={LABEL_STYLE}>画像 / 動画</label>

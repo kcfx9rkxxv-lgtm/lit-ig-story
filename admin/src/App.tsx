@@ -4,7 +4,10 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from './lib/firebase'
 import Calendar from './components/Calendar'
 import EditPanel from './components/EditPanel'
+import StockManager from './components/StockManager'
 import { useMonthData } from './hooks/useMonthData'
+
+type TabType = 'calendar' | 'stock'
 
 const IG_GRADIENT = 'linear-gradient(45deg, #833AB4, #FD1D1D, #F77737)'
 
@@ -39,8 +42,14 @@ const NAV_BTN_STYLE: CSSProperties = {
   lineHeight: 1,
 }
 
+const TABS: { key: TabType; label: string }[] = [
+  { key: 'calendar', label: 'カレンダー' },
+  { key: 'stock', label: 'ストック管理' },
+]
+
 export default function App() {
   const today = new Date()
+  const [activeTab, setActiveTab] = useState<TabType>('calendar')
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth() + 1)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
@@ -85,32 +94,62 @@ export default function App() {
             LIT 投稿管理
           </h1>
           <span style={{ fontSize: '13px', color: '#8E8E8E', fontWeight: 500 }}>
-            {monthLabel}
+            {activeTab === 'calendar' ? monthLabel : 'ストック'}
           </span>
         </header>
 
-        {/* 月ナビゲーション */}
-        <div style={NAV_STYLE}>
-          <button onClick={handlePrev} style={NAV_BTN_STYLE}>‹</button>
-          <span style={{ fontWeight: 600, fontSize: '15px', color: '#262626' }}>
-            {monthLabel}
-          </span>
-          <button onClick={handleNext} style={NAV_BTN_STYLE}>›</button>
+        {/* タブ切り替え */}
+        <div style={{ display: 'flex', background: '#FFF', borderBottom: '1px solid #DBDBDB' }}>
+          {TABS.map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                flex: 1,
+                padding: '12px',
+                background: 'none',
+                border: 'none',
+                borderBottom: `2px solid ${activeTab === tab.key ? '#833AB4' : 'transparent'}`,
+                color: activeTab === tab.key ? '#833AB4' : '#8E8E8E',
+                fontSize: '14px',
+                fontWeight: activeTab === tab.key ? 700 : 400,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* カレンダー本体 */}
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '60px 0', color: '#8E8E8E', fontSize: '14px' }}>
-            読み込み中...
-          </div>
+        {activeTab === 'calendar' ? (
+          <>
+            {/* 月ナビゲーション */}
+            <div style={NAV_STYLE}>
+              <button onClick={handlePrev} style={NAV_BTN_STYLE}>‹</button>
+              <span style={{ fontWeight: 600, fontSize: '15px', color: '#262626' }}>
+                {monthLabel}
+              </span>
+              <button onClick={handleNext} style={NAV_BTN_STYLE}>›</button>
+            </div>
+
+            {/* カレンダー本体 */}
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: '60px 0', color: '#8E8E8E', fontSize: '14px' }}>
+                読み込み中...
+              </div>
+            ) : (
+              <Calendar
+                year={year}
+                month={month}
+                monthData={data}
+                selectedDate={selectedDate}
+                onDateSelect={setSelectedDate}
+              />
+            )}
+          </>
         ) : (
-          <Calendar
-            year={year}
-            month={month}
-            monthData={data}
-            selectedDate={selectedDate}
-            onDateSelect={setSelectedDate}
-          />
+          <StockManager />
         )}
       </div>
 
