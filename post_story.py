@@ -248,14 +248,14 @@ def generate_caption_with_claude(staff: str, open_time: str, note: str) -> str:
     return message.content[0].text.strip()
 
 
-def get_caption(entry: dict, staff: str) -> str:
-    """キャプションを取得する。優先順位: Firestore > CSV custom_text > Claude API"""
-    date_str = entry.get("date", "")
-    open_time = entry.get("open_time", "")
+def get_caption(entry: dict, staff: str, override: dict | None = None) -> str:
+    """キャプションを取得する。優先順位: Firestore > CSV custom_text > Claude API
+    override は呼び出し元で取得済みの Firestore データを渡す（二重取得を避けるため）。"""
+    # Firestoreの open_time があれば優先使用
+    fs_open_time = (override.get("open_time") or "").strip() if override else ""
+    open_time = fs_open_time or entry.get("open_time", "")
     note = entry.get("note", "")
 
-    # Firestoreのオーバーライドを最優先で確認
-    override = get_firestore_override(date_str)
     if override:
         fs_text = (override.get("custom_text") or "").strip()
         fs_mentions = override.get("mentions") or []
@@ -264,11 +264,9 @@ def get_caption(entry: dict, staff: str) -> str:
             logger.info("Firestoreのcustom_textをキャプションとして使用します。")
             caption = fs_text
         else:
-            # custom_textなし → Claude APIで生成
             logger.info("FirestoreにテキストなしのためClaude APIでキャプションを生成します。")
             caption = generate_caption_with_claude(staff, open_time, note)
 
-        # メンションがあればテキスト末尾に追加
         if fs_mentions:
             caption = caption + " " + " ".join(fs_mentions)
             logger.info(f"メンションを追記しました: {fs_mentions}")
@@ -279,12 +277,10 @@ def get_caption(entry: dict, staff: str) -> str:
     entry_type = entry.get("type", "normal")
     csv_custom_text = entry.get("custom_text", "")
 
-    # special で CSV の custom_text あり → そのまま使用
     if entry_type == "special" and csv_custom_text:
         logger.info("CSVのcustom_textをそのままキャプションとして使用します（Claude API 呼び出しなし）。")
         return csv_custom_text
 
-    # それ以外 → Claude API でキャプション生成
     logger.info("Claude API でキャプションを生成します。")
     return generate_caption_with_claude(staff, open_time, note)
 
@@ -292,47 +288,43 @@ def get_caption(entry: dict, staff: str) -> str:
 # ===== Step5: Instagram投稿 =====
 
 def upload_image_to_storage(image_path: Path) -> str:
-    """
-    画像を公開URLとしてストレージへアップロードする関数（実装は TODO）
-
-    Instagram Graph API はインターネット上から到達可能な公開 URL が必要。
-    以下のいずれかのストレージを使って実装してください：
-      - Amazon S3 / Google Cloud Storage / Azure Blob Storage
-      - Cloudinary
-      - GitHub Releases（公開リポジトリの場合）
-    """
-    # TODO: 実際のストレージへのアップロード処理をここに実装する
-    # 実装例（Cloudinaryの場合）:
-    #   import cloudinary.uploader
-    #   result = cloudinary.uploader.upload(str(image_path))
-    #   return result["secure_url"]
+    """ローカル画像をストレージにアップロードして公開URLを返す（フォールバック用）。
+    管理画面経由で Firebase Storage に登録済みの場合は resolve_image_url() が先に使う。
+    TODO: S3 / GCS / Cloudinary などのアップロード処理を実装する。"""
     raise NotImplementedError(
-        "upload_image_to_storage() は未実装です。"
-        "画像を公開URLとしてアップロードするストレージの実装を追加してください。"
+        "ローカルからのアップロードは未実装です。"
+        "管理画面から画像をアップロードして Firebase Storage の URL を登録してください。"
     )
 
 
-def post_to_instagram(image_path: Path, caption: str) -> bool:
+def resolve_image_url(image_path: Path | None, override: dict | None) -> str:
+    """投稿画像の公開URLを解決する。
+    Firestore に image_url があればそれを優先し、なければローカルファイルをアップロードする。"""
+    if override and override.get("image_url"):
+        url = override["image_url"]
+        logger.info(f"Firebase StorageのURLを使用: {url}")
+        return url
+
+    if image_path is None:
+        raise ValueError("image_url も image_path も指定されていません。")
+
+    logger.info("Firestoreにimage_urlなし。ローカルファイルをアップロードします。")
+    return upload_image_to_storage(image_path)
+
+
+def post_to_instagram(image_url: str, caption: str) -> bool:
     """Instagram Graph API v19.0 を使ってストーリーを投稿する"""
 
     # シミュレートモード（IG_LIVE_MODE = False）
     if not IG_LIVE_MODE:
         logger.info("[シミュレート] IG_LIVE_MODE=False のため実際の投稿はスキップします。")
-        logger.info(f"[シミュレート] 投稿予定画像: {image_path}")
+        logger.info(f"[シミュレート] 投稿予定画像URL: {image_url}")
         logger.info(f"[シミュレート] 投稿予定キャプション: {caption}")
         return True
 
-    # 画像を公開URLに変換
-    try:
-        image_url = upload_image_to_storage(image_path)
-        logger.info(f"画像を公開URLに変換しました: {image_url}")
-    except NotImplementedError as e:
-        logger.error(f"画像アップロード未実装のため投稿できません: {e}")
-        return False
-
     base_url = f"https://graph.facebook.com/v19.0/{IG_USER_ID}"
 
-    # Step1: メディアコンテナを作成
+    # Step1: メディアコンテナを作成（image_url は Firebase Storage の公開URL）
     logger.info("Step1: Instagram メディアコンテナを作成します。")
     media_resp = requests.post(
         f"{base_url}/media",
@@ -410,20 +402,23 @@ def main() -> None:
     else:
         logger.warning(f"{date_str} のシフト情報が見つかりません。スタッフ名なしで続行します。")
 
-    # Step3: 画像選択
-    logger.info("【Step3】投稿画像を選択します。")
-    image_path = select_image(entry)
+    # Firestore オーバーライドを一度だけ取得（Step4・Step5 で共用）
+    override = get_firestore_override(date_str)
 
-    if image_path is None:
-        logger.error("投稿画像の取得に失敗しました。処理を終了します。")
+    # Step3: 画像URL解決
+    logger.info("【Step3】投稿画像のURLを解決します。")
+    image_path = select_image(entry)  # ローカル画像（Firestoreにない場合のフォールバック）
+    try:
+        resolved_image_url = resolve_image_url(image_path, override)
+        logger.info(f"投稿画像URL: {resolved_image_url}")
+    except (NotImplementedError, ValueError) as e:
+        logger.error(f"画像URLの解決に失敗しました: {e}")
         sys.exit(1)
-
-    logger.info(f"選択された画像: {image_path}")
 
     # Step4: キャプション生成
     logger.info("【Step4】キャプションを取得します。")
     try:
-        caption = get_caption(entry, staff)
+        caption = get_caption(entry, staff, override)
         logger.info(f"キャプション: {caption}")
     except Exception as e:
         logger.error(f"キャプション生成に失敗しました: {e}")
@@ -431,7 +426,7 @@ def main() -> None:
 
     # Step5: Instagram投稿
     logger.info("【Step5】Instagram ストーリーを投稿します。")
-    success = post_to_instagram(image_path, caption)
+    success = post_to_instagram(resolved_image_url, caption)
 
     if success:
         logger.info(f"===== 投稿完了: {date_str} =====")

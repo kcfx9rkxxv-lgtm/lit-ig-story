@@ -1,178 +1,127 @@
-import { useState, useEffect, useCallback } from 'react'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { useState, useCallback } from 'react'
+import type { CSSProperties } from 'react'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from './lib/firebase'
-import DateSelector from './components/DateSelector'
-import TextEditor from './components/TextEditor'
-import MentionInput from './components/MentionInput'
+import Calendar from './components/Calendar'
+import EditPanel from './components/EditPanel'
+import { useMonthData } from './hooks/useMonthData'
 
-interface Toast {
-  msg: string
-  ok: boolean
+const IG_GRADIENT = 'linear-gradient(45deg, #833AB4, #FD1D1D, #F77737)'
+
+const HEADER_STYLE: CSSProperties = {
+  padding: '12px 16px',
+  borderBottom: '1px solid #DBDBDB',
+  background: '#FFF',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  position: 'sticky',
+  top: 0,
+  zIndex: 10,
 }
 
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10)
+const NAV_STYLE: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '10px 16px',
+  background: '#FFF',
+  borderBottom: '1px solid #DBDBDB',
+}
+
+const NAV_BTN_STYLE: CSSProperties = {
+  background: 'none',
+  border: 'none',
+  fontSize: '26px',
+  cursor: 'pointer',
+  color: '#262626',
+  padding: '2px 12px',
+  lineHeight: 1,
 }
 
 export default function App() {
-  const [date, setDate] = useState(todayStr())
-  const [customText, setCustomText] = useState('')
-  const [mentions, setMentions] = useState<string[]>([])
-  const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<Toast | null>(null)
+  const today = new Date()
+  const [year, setYear] = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth() + 1)
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const { data, loading, refetch } = useMonthData(year, month)
 
-  // 日付変更時にFirestoreから該当データを自動ロード
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      setCustomText('')
-      setMentions([])
-      try {
-        const snap = await getDoc(doc(db, 'daily_overrides', date))
-        if (snap.exists()) {
-          const data = snap.data()
-          setCustomText(data.custom_text ?? '')
-          setMentions(data.mentions ?? [])
-        }
-      } catch (e) {
-        console.error('Firestore load error:', e)
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [date])
-
-  const showToast = useCallback((msg: string, ok: boolean) => {
-    setToast({ msg, ok })
-    setTimeout(() => setToast(null), 2000)
-  }, [])
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      await setDoc(
-        doc(db, 'daily_overrides', date),
-        {
-          date,
-          custom_text: customText,
-          mentions,
-          updated_at: serverTimestamp(),
-        },
-        { merge: true },
-      )
-      showToast('保存しました ✓', true)
-    } catch (e) {
-      console.error('Firestore save error:', e)
-      showToast('エラーが発生しました', false)
-    } finally {
-      setSaving(false)
-    }
+  const handlePrev = () => {
+    if (month === 1) { setYear(y => y - 1); setMonth(12) }
+    else setMonth(m => m - 1)
   }
 
+  const handleNext = () => {
+    if (month === 12) { setYear(y => y + 1); setMonth(1) }
+    else setMonth(m => m + 1)
+  }
+
+  const handleSave = useCallback(async (date: string, formData: Record<string, unknown>) => {
+    await setDoc(
+      doc(db, 'daily_overrides', date),
+      { ...formData, date, updated_at: serverTimestamp() },
+      { merge: true },
+    )
+    await refetch()
+  }, [refetch])
+
+  const monthLabel = `${year}年${month}月`
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-        backgroundColor: '#0D0D0D',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '430px',
-          padding: '32px 20px 48px',
-        }}
-      >
+    <div style={{ background: '#FAFAFA', minHeight: '100vh' }}>
+      <div style={{ maxWidth: '430px', margin: '0 auto' }}>
         {/* ヘッダー */}
-        <h1
-          style={{
-            fontSize: '18px',
-            fontWeight: 700,
-            letterSpacing: '0.12em',
-            color: '#C9A84C',
-            textAlign: 'center',
-            marginBottom: '36px',
-          }}
-        >
-          LIT 投稿管理
-        </h1>
-
-        {/* 日付選択 */}
-        <section style={{ marginBottom: '24px' }}>
-          <DateSelector date={date} onChange={setDate} />
-        </section>
-
-        {loading ? (
-          <div
+        <header style={HEADER_STYLE}>
+          <h1
             style={{
-              textAlign: 'center',
-              color: '#555',
-              padding: '60px 0',
-              fontSize: '14px',
+              fontSize: '20px',
+              fontWeight: 700,
+              background: IG_GRADIENT,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
             }}
           >
+            LIT 投稿管理
+          </h1>
+          <span style={{ fontSize: '13px', color: '#8E8E8E', fontWeight: 500 }}>
+            {monthLabel}
+          </span>
+        </header>
+
+        {/* 月ナビゲーション */}
+        <div style={NAV_STYLE}>
+          <button onClick={handlePrev} style={NAV_BTN_STYLE}>‹</button>
+          <span style={{ fontWeight: 600, fontSize: '15px', color: '#262626' }}>
+            {monthLabel}
+          </span>
+          <button onClick={handleNext} style={NAV_BTN_STYLE}>›</button>
+        </div>
+
+        {/* カレンダー本体 */}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '60px 0', color: '#8E8E8E', fontSize: '14px' }}>
             読み込み中...
           </div>
         ) : (
-          <>
-            {/* 投稿テキスト */}
-            <section style={{ marginBottom: '24px' }}>
-              <TextEditor value={customText} onChange={setCustomText} />
-            </section>
-
-            {/* メンション */}
-            <section style={{ marginBottom: '36px' }}>
-              <MentionInput mentions={mentions} onChange={setMentions} />
-            </section>
-
-            {/* 保存ボタン */}
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              style={{
-                width: '100%',
-                padding: '15px',
-                backgroundColor: saving ? '#8a7030' : '#C9A84C',
-                color: '#0D0D0D',
-                border: 'none',
-                borderRadius: '10px',
-                fontSize: '15px',
-                fontWeight: 700,
-                cursor: saving ? 'not-allowed' : 'pointer',
-                letterSpacing: '0.08em',
-                transition: 'background-color 0.2s',
-              }}
-            >
-              {saving ? '保存中...' : '保存する'}
-            </button>
-          </>
+          <Calendar
+            year={year}
+            month={month}
+            monthData={data}
+            selectedDate={selectedDate}
+            onDateSelect={setSelectedDate}
+          />
         )}
       </div>
 
-      {/* トースト通知 */}
-      {toast && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '32px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            backgroundColor: toast.ok ? '#0f2b0f' : '#2b0f0f',
-            color: toast.ok ? '#66bb6a' : '#ef5350',
-            border: `1px solid ${toast.ok ? '#66bb6a' : '#ef5350'}`,
-            padding: '12px 28px',
-            borderRadius: '10px',
-            fontSize: '14px',
-            whiteSpace: 'nowrap',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-          }}
-        >
-          {toast.msg}
-        </div>
+      {/* 編集パネル（ボトムシートモーダル） */}
+      {selectedDate && (
+        <EditPanel
+          date={selectedDate}
+          initialData={data[selectedDate] ?? null}
+          onSave={handleSave}
+          onClose={() => setSelectedDate(null)}
+        />
       )}
     </div>
   )
