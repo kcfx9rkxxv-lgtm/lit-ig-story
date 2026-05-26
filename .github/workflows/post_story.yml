@@ -1,0 +1,53 @@
+name: LIT Instagram Story Auto Post
+
+on:
+  # 毎日 14:00 JST（UTC 05:00）に自動実行
+  schedule:
+    - cron: '0 5 * * *'
+
+  # 手動実行（日付を引数で指定可能）
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '投稿日付（YYYY-MM-DD形式。空欄で当日を使用）'
+        required: false
+        default: ''
+
+jobs:
+  post-story:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存ライブラリをインストール
+        run: pip install anthropic pillow requests
+
+      - name: Instagram ストーリーを投稿
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          # 実際に投稿する場合は GitHub Secrets に IG_LIVE_MODE=true を追加する
+          IG_LIVE_MODE: ${{ secrets.IG_LIVE_MODE }}
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            python post_story.py "${{ github.event.inputs.date }}"
+          else
+            python post_story.py
+          fi
+
+      # 成功・失敗どちらの場合もログをアーティファクトとして保存
+      - name: ログをアーティファクトとして保存
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-log-${{ github.run_id }}
+          path: logs/post_log.txt
+          retention-days: 30
