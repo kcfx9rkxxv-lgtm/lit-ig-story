@@ -10,20 +10,19 @@ interface Props {
   date: string
   imageUrl: string
   onUploadComplete: (url: string) => void
+  onError?: (msg: string) => void
 }
 
-export default function ImageUpload({ date, imageUrl, onUploadComplete }: Props) {
+export default function ImageUpload({ date, imageUrl, onUploadComplete, onError }: Props) {
   const [dragging, setDragging] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const upload = (file: File) => {
     if (!ACCEPTED_TYPES.includes(file.type)) {
-      setError('対応ファイル: JPG / PNG / WebP / MP4')
+      onError?.('対応ファイル: JPG / PNG / WebP / MP4')
       return
     }
-    setError(null)
     setProgress(0)
 
     const storageRef = ref(storage, `story_images/${date}/${file.name}`)
@@ -32,12 +31,20 @@ export default function ImageUpload({ date, imageUrl, onUploadComplete }: Props)
     task.on(
       'state_changed',
       snap => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-      err => { setError(err.message); setProgress(null) },
+      err => {
+        onError?.(err.message)
+        setProgress(null)
+      },
       () => {
-        getDownloadURL(task.snapshot.ref).then(url => {
-          onUploadComplete(url)
-          setProgress(null)
-        })
+        getDownloadURL(task.snapshot.ref)
+          .then(url => {
+            onUploadComplete(url)
+            setProgress(null)
+          })
+          .catch(err => {
+            onError?.(err.message)
+            setProgress(null)
+          })
       },
     )
   }
@@ -136,10 +143,6 @@ export default function ImageUpload({ date, imageUrl, onUploadComplete }: Props)
             アップロード中 {progress}%
           </div>
         </div>
-      )}
-
-      {error && (
-        <div style={{ fontSize: '12px', color: '#FD1D1D', marginTop: '8px' }}>{error}</div>
       )}
 
       <input

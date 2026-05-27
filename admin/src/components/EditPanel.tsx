@@ -144,7 +144,7 @@ export default function EditPanel({ date, initialData, onSave, onClose }: Props)
           {/* 画像アップロード */}
           <section>
             <label style={LABEL_STYLE}>画像 / 動画</label>
-            <ImageUpload date={date} imageUrl={imageUrl} onUploadComplete={setImageUrl} />
+            <ImageUpload date={date} imageUrl={imageUrl} onUploadComplete={setImageUrl} onError={msg => showToast(msg, false)} />
           </section>
 
           {/* 投稿タイプ */}

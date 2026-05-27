@@ -16,9 +16,10 @@ interface UploadTask {
 interface Props {
   folder: StockFolder
   onUploadComplete: () => void
+  onError?: (msg: string) => void
 }
 
-export default function StockUpload({ folder, onUploadComplete }: Props) {
+export default function StockUpload({ folder, onUploadComplete, onError }: Props) {
   const [tasks, setTasks] = useState<UploadTask[]>([])
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -48,6 +49,7 @@ export default function StockUpload({ folder, onUploadComplete }: Props) {
         },
         err => {
           setTasks(prev => prev.map((t, i) => i === idx ? { ...t, error: err.message, done: true } : t))
+          onError?.(err.message)
           completed++
           if (completed === files.length) finalize()
         },

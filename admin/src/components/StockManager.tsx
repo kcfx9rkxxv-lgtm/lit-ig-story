@@ -14,11 +14,21 @@ const FOLDERS: { key: StockFolder; icon: string; label: string }[] = [
 
 export default function StockManager() {
   const [folder, setFolder] = useState<StockFolder>('normal')
+  const [toast, setToast] = useState<string | null>(null)
   const { files, loading, refetch, deleteFile } = useStockFiles(folder)
+
+  const showError = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const handleDelete = async (fullPath: string, name: string) => {
     if (!window.confirm(`「${name}」を削除しますか？`)) return
-    await deleteFile(fullPath)
+    try {
+      await deleteFile(fullPath)
+    } catch {
+      showError('削除に失敗しました')
+    }
   }
 
   return (
@@ -64,7 +74,7 @@ export default function StockManager() {
         background: '#FFF',
         borderBottom: '1px solid #DBDBDB',
       }}>
-        <StockUpload folder={folder} onUploadComplete={refetch} />
+        <StockUpload folder={folder} onUploadComplete={refetch} onError={showError} />
       </div>
 
       {/* ファイル一覧 */}
@@ -79,6 +89,29 @@ export default function StockManager() {
         </div>
       ) : (
         <StockGrid files={files} onDelete={handleDelete} />
+      )}
+
+      {/* エラートースト */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '32px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#262626',
+            color: '#FFF',
+            padding: '10px 24px',
+            borderRadius: '20px',
+            fontSize: '13px',
+            fontWeight: 500,
+            zIndex: 200,
+            whiteSpace: 'nowrap',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+          }}
+        >
+          {toast}
+        </div>
       )}
     </div>
   )
